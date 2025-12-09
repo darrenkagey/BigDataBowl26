@@ -1,1 +1,5 @@
+## Data files in this folder
+### Tracking Data of NFL defenders when the ball is in the air during the 2023 NFL Regular Season, and provided supplemental data (one file per week)
+### SumerSports supplemental data for the Big Data Bowl (publicly available)
+### I also used nflfastr play-by-play data from 2023 which can be loaded in r using the nflfastr package
 
