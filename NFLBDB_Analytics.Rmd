@@ -1,0 +1,1104 @@
+---
+title: "How Players Move with the Ball in the Air"
+author: "Darren Kagey"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: scroll
+---
+
+```{r setup, include=FALSE}
+#knitr::opts_chunk$set(fig.width=10, fig.height=7) # knit settings
+
+# load in libraries
+library(tidyverse)
+library(arrow)
+library(cluster)
+library(purrr)
+library(nflreadr)
+library(gt)
+library(patchwork)
+
+# load in non-tracking data
+supp_data <- read.csv("supplementary_data.csv")
+pbp <-load_pbp(seasons = 2023) %>% filter(!is.na(pass_defense_1_player_id) | !is.na(pass_defense_2_player_id)) %>% mutate(old_game_id = as.numeric(old_game_id)) %>% select(old_game_id, play_id, pass_defense_1_player_id, pass_defense_1_player_name, pass_defense_2_player_id, pass_defense_2_player_name)
+sumer_plays <- read_parquet("sumer_coverages_player_play.parquet")
+```
+
+
+```{r, include=FALSE, echo=FALSE}
+# Load in tracking data
+input_week1 <- read.csv("input_2023_w01.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+output_week1 <- read.csv("output_2023_w01.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+input_week2 <- read.csv("input_2023_w02.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+output_week2 <- read.csv("output_2023_w02.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+input_week3 <- read.csv("input_2023_w03.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+output_week3 <- read.csv("output_2023_w03.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+input_week4 <- read.csv("input_2023_w04.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+output_week4 <- read.csv("output_2023_w04.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+input_week5 <- read.csv("input_2023_w05.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+output_week5 <- read.csv("output_2023_w05.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+input_week6 <- read.csv("input_2023_w06.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+output_week6 <- read.csv("output_2023_w06.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+input_week7 <- read.csv("input_2023_w07.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+output_week7 <- read.csv("output_2023_w07.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+input_week8 <- read.csv("input_2023_w08.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+output_week8 <- read.csv("output_2023_w08.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+input_week9 <- read.csv("input_2023_w09.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+output_week9 <- read.csv("output_2023_w09.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+input_week10 <- read.csv("input_2023_w10.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+output_week10 <- read.csv("output_2023_w10.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+input_week11 <- read.csv("input_2023_w11.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+output_week11 <- read.csv("output_2023_w11.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+input_week12 <- read.csv("input_2023_w12.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+output_week12 <- read.csv("output_2023_w12.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+input_week13 <- read.csv("input_2023_w13.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+output_week13 <- read.csv("output_2023_w13.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+input_week14 <- read.csv("input_2023_w14.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+output_week14 <- read.csv("output_2023_w14.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+input_week15 <- read.csv("input_2023_w15.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+output_week15 <- read.csv("output_2023_w15.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+input_week16 <- read.csv("input_2023_w16.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+output_week16 <- read.csv("output_2023_w16.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+input_week17 <- read.csv("input_2023_w17.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+output_week17 <- read.csv("output_2023_w17.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+input_week18 <- read.csv("input_2023_w18.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+output_week18 <- read.csv("output_2023_w18.csv") %>% left_join(supp_data, by=c("game_id","play_id")) %>% inner_join(pbp, by=c("game_id"="old_game_id", "play_id"))
+
+inputs <- rbind(input_week1, input_week2, input_week3, input_week4, input_week5, input_week6, input_week7, input_week8, input_week9, input_week10, input_week11, input_week12, input_week13, input_week14, input_week15, input_week16, input_week17, input_week18) %>%  mutate(nfl_id = as.character(nfl_id)) #%>% #filter(player_to_predict == "True")
+
+
+
+names_positions_roles_for_outputs <- inputs %>% distinct(game_id, play_id, nfl_id,player_name, player_position, player_role, play_direction)
+
+outputs <- rbind(output_week1, output_week2, output_week3, output_week4, output_week5, output_week6, output_week7, output_week8, output_week9, output_week10, output_week11, output_week12, output_week13, output_week14, output_week15, output_week16, output_week17, output_week18) %>%  mutate(nfl_id = as.character(nfl_id)) %>%   left_join(names_positions_roles_for_outputs, by=c("nfl_id", "play_id", "game_id"))
+
+
+# get names in tracking data to match names in pbp data
+shorten_name <- function(x) {
+  # Split name by spaces
+  parts <- unlist(strsplit(x, " "))
+  
+  # Define common suffixes
+  suffixes <- c("Jr.", "Sr.", "II", "III", "IV", "V")
+  
+  # Remove suffix if present
+  if (parts[length(parts)] %in% suffixes) {
+    last_name <- parts[length(parts) - 1]
+  } else {
+    last_name <- parts[length(parts)]
+  }
+  
+  # Extract first initial
+  first_initial <- substr(parts[1], 1, 1)
+  
+  # Combine into desired format
+  paste0(first_initial, ".", last_name)
+}
+ 
+ 
+ 
+inputs$pbp_name <- sapply(inputs$player_name, shorten_name)
+outputs$pbp_name <- sapply(outputs$player_name, shorten_name)
+ 
+
+# filter to frames of player with pbu
+inputs_pbus <- inputs %>% filter(player_to_predict == "True") %>%  filter(pass_defense_1_player_name == pbp_name | pass_defense_2_player_name == pbp_name)
+outputs_pbus <- outputs %>% filter(pass_defense_1_player_name == pbp_name | pass_defense_2_player_name == pbp_name)
+
+# make frame_id in outputs_pbus continue where they left off in inputs_pbus
+frame_ids_inputs_pbus <- inputs_pbus %>% select(game_id, play_id, nfl_id, frame_id) %>% group_by(game_id, play_id, nfl_id) %>% mutate(last_frame = max(frame_id)) %>% select(-frame_id) %>%  ungroup() %>%  distinct() # get last frame in input for each player, play, game
+
+outputs_pbus2 <- outputs_pbus %>% left_join(frame_ids_inputs_pbus, by=c("game_id", "play_id", "nfl_id")) %>% mutate(frame_id = frame_id + last_frame) # join last_frame into outputs and recalculate frame_id
+
+# join inputs and outputs
+pbu_tracking <- plyr::rbind.fill(inputs_pbus, outputs_pbus2)
+
+
+# order data
+pbu_tracking <- pbu_tracking[order(pbu_tracking$game_id, pbu_tracking$play_id, pbu_tracking$frame_id),]
+```
+
+```{r, include=FALSE, echo=FALSE}
+pbu_movement <- outputs_pbus2 %>%
+  # flip coords so all plays are going right
+  mutate(
+    x_dir = ifelse(play_direction == "left", 120 - x, x),
+    y_dir = ifelse(play_direction == "left", 53.3 - y, y)
+  )
+# calculate LOS (x) and center of the play (y) at first frame
+los_pbu <- pbu_movement %>%
+  group_by(game_id, play_id) %>%
+  summarize(
+    los_x = min(x_dir[frame_id == min(frame_id)], na.rm = TRUE),
+    center_y = mean(y_dir[frame_id == min(frame_id)], na.rm = TRUE),
+    .groups = "drop"
+  )
+
+pbu_movement_standard <- pbu_movement %>%
+  # join in LOS and center of plays
+  left_join(los_pbu, by = c("game_id", "play_id")) %>%
+  # standardize coords so LOS is 20 and ball is on middle hash
+  mutate(
+    x_std = x_dir - los_x + 20,
+    y_std = y_dir - center_y + 26.65
+  ) %>% 
+  # standardized path direction, so all routes are going to same sideline
+  mutate(y_change = last(y_std) - first(y_std),
+      y_std = ifelse(y_change < 0, 53.3 - y_std, y_std)
+    ) %>%
+    select(-y_change)
+
+
+
+
+# join in sumer supplemental data
+sumer_pbu_movements <- inner_join(sumer_plays %>% mutate(nfl_id = as.character(nfl_id)), pbu_movement_standard) %>% mutate(PBU = TRUE)
+```
+
+```{r, include=FALSE, echo=FALSE}
+# function to plot football field
+football_field <- function() {
+  ggplot() +
+    # Outer boundary
+    geom_rect(aes(xmin = 0, xmax = 120, ymin = 0, ymax = 53.3),
+              fill = "darkgreen", color = "white") +
+    # End zones
+    geom_rect(aes(xmin = 0, xmax = 10, ymin = 0, ymax = 53.3),
+              fill = "blue", alpha = 0.3) +
+    geom_rect(aes(xmin = 110, xmax = 120, ymin = 0, ymax = 53.3),
+              fill = "red", alpha = 0.3) +
+    # Yard lines every 10 yards
+    geom_vline(xintercept = seq(10, 120, by = 10), color = "white", size = 0.5) +
+    coord_fixed() +
+    theme_void()
+}
+# resampling player paths so they all have the same number of frames (10)
+N_FRAMES = 10
+resample_path <- function(df_group, n = N_FRAMES) {
+  # Extract x and y
+  x <- df_group$x_std
+  y <- df_group$y_std
+  frames <- seq_along(x)
+  new_frames <- seq(min(frames), max(frames), length.out = n) # generates n frame positions (shrinking or expanding)
+
+  # Resampled coordinates
+  resampled <- tibble(
+    frame_norm   = 1:n,
+    x_resampled  = approx(frames, x, xout = new_frames)$y,
+    y_resampled  = approx(frames, y, xout = new_frames)$y
+  )
+
+  # Attach metadata (all other columns, take from first row of group)
+  meta <- df_group %>%
+    slice(1) %>%
+    select(-x_std, -y_std, -frame_id)  # drop raw coords/frame if not needed
+
+  # Repeat metadata for each resampled frame
+  bind_cols(meta[rep(1, n), ], resampled)
+}
+
+# takes standardized dataset and returns n resampled coord points per path
+resample_all <- function(df_std, n = N_FRAMES) {
+  df_std %>%
+    group_by(game_id, play_id, nfl_id) %>%
+    arrange(frame_id, .by_group = TRUE) %>%
+    # takes standardized coords for each path, returns n coord points for said path
+    group_modify(~ resample_path(.x, n = n)) %>%
+    ungroup()
+}
+
+df_resampled <- resample_all(df_std = sumer_pbu_movements)
+
+library(mgcv)
+smooth_with_gam <- function(df) {
+  df %>%
+    group_by(game_id, play_id, nfl_id) %>%
+    group_modify(~ {
+      # x/y coords are modeled smoothly as a function of frame index
+      # k is basis functions (piecewise polynomials) controls flexibility (oversimplifiying/overfitting)
+      # REML is restricted maximum likelihood - estimates the smoothing parameter via maxing chances of observed values, after accounting for fixed effects (mean trajectory trends), so smoothing is less susceptible to noise
+      gx <- gam(x_resampled ~ s(frame_norm, k = 10), data = .x, method = "REML")
+      gy <- gam(y_resampled ~ s(frame_norm, k = 10), data = .x, method = "REML")
+      
+      # predicted smoothed coords
+      .x$x_gam <- predict(gx, newdata = .x)
+      .x$y_gam <- predict(gy, newdata = .x)
+      .x
+    }) %>%
+    ungroup()
+}
+
+df_gam <- smooth_with_gam(df = df_resampled) %>% 
+  # necessary because there's 1 instance where the player path is of a WR because they share pbp_name
+  filter(alignment != "WR")
+```
+
+```{r, include=FALSE, echo=FALSE}
+# build table with route x responsibility counts
+routes_responsibilities <-  df_gam %>%
+  group_by(coverage_responsibility, route_of_targeted_receiver) %>%
+  summarize(
+    n_paths = n_distinct(play_id, nfl_id),  # distinct player-paths
+    .groups = "drop"
+  ) %>%
+  arrange(desc(n_paths))
+
+routes_responsibilites_table <- head(routes_responsibilities, 5) %>% 
+  gt() %>% 
+  tab_header(
+    title = "Route x Coverage Role Counts",
+    subtitle = "Plays with a PBU - 2023 Season"
+  )  %>% 
+  tab_options(
+    table.border.top.style = "solid",
+    table.border.top.width = px(2),
+    table.border.top.color = "black",
+    
+    table.border.bottom.style = "solid",
+    table.border.bottom.width = px(2),
+    table.border.bottom.color = "black",
+    
+    table.border.left.style = "solid",
+    table.border.left.width = px(2),
+    table.border.left.color = "black",
+    
+    table.border.right.style = "solid",
+    table.border.right.width = px(2),
+    table.border.right.color = "black"
+  ) %>% 
+  tab_style(
+    style = cell_borders(
+      sides = "bottom",
+      color = "black",
+      weight = px(2),
+      style = "solid"
+    ),
+    locations = cells_body(rows = nrow(head(routes_responsibilities,5)))
+  )
+gtsave(routes_responsibilites_table, "routes_responsibilites_table.png")
+```
+
+```{r, include=FALSE, echo=FALSE}
+## build cluster features on frame level data
+# calculate speed, displacement, max width, max depth, path length
+
+df_features_frames <- df_gam %>%
+    filter(!is.na(coverage_responsibility), coverage_responsibility != "PREVENT", route_of_targeted_receiver != "SCREEN") %>% 
+    mutate(route_type = case_when(
+      route_of_targeted_receiver %in% c("GO", "POST", "WHEEL") ~ "VERTICAL",
+      route_of_targeted_receiver %in% c("IN", "OUT", "HITCH", "ANGLE", "CORNER") ~ "BREAKER",
+      route_of_targeted_receiver %in% c("CROSS", "SLANT", "FLAT") ~ "HORIZONTAL"
+    ),
+    responsibility_type = case_when(
+      coverage_responsibility == "MAN" ~ "MAN",
+      coverage_responsibility %in% c("THIRD", "QUARTER", "HALF", "POST") ~ "DEEP ZONE",
+      coverage_responsibility %in% c("HOLE", "CURL FLAT", "FLAT", "HOOK CURL") ~ "UNDERNEATH ZONE"
+    )) %>% 
+    group_by(play_id, responsibility_type, route_type) %>%
+    summarise(
+      x_gam = x_gam,
+      y_gam = y_gam,
+      frame_norm = frame_norm,
+      game_id = game_id,
+      nfl_id = nfl_id,
+      width = max(y_gam),   
+      depth = max(x_gam),  
+      dist_per_frame = mean(sqrt(diff(x_gam)^2 + diff(y_gam)^2), na.rm = TRUE), # speed
+      vertical_disp = last(y_gam) - first(y_gam),
+      horizontal_disp = last(x_gam) - first(x_gam),
+      length = sum(sqrt(diff(x_gam)^2 + diff(y_gam)^2)),  # path length
+      .groups = "drop"
+    )
+
+ # claculate breaking point ( frame where COD occurs), get frames where max width and depth occur, frame to frame speed, and angle change
+  df_time_frames <- df_gam %>%
+    group_by(play_id) %>%
+    mutate(
+      dx = c(NA, diff(x_gam)),
+      dy = c(NA, diff(y_gam)),
+      angle = atan2(dy, dx),
+      angle_change = c(NA, diff(angle)),
+       speed_ff = sqrt(dx^2 + dy^2), # frame to frame speed
+    heading = atan2(dy, dx) # dir of step, radians
+    ) %>% 
+    mutate(
+      # Modulo heading differences
+      dtheta_raw = heading - lag(heading),
+    dtheta = if_else(is.na(dtheta_raw), NA_real_,
+                     ((dtheta_raw + pi) %% (2 * pi)) - pi)
+    ) %>%
+    summarise(
+      x_gam = x_gam,
+      y_gam = y_gam,
+      frame_norm = frame_norm,
+      breaking_point = frame_norm[which.max(abs(angle_change))],
+       width_time = frame_norm[which.max(y_gam)],
+      depth_time = frame_norm[which.max(x_gam)],
+    speed_var = var(speed_ff, na.rm = TRUE),
+    total_angle_change = sum(abs(dtheta), na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  # join
+ df_features_frames <- df_features_frames %>%  left_join(df_time_frames, by = c("play_id", "frame_norm", "x_gam", "y_gam"))
+ 
+ 
+ ## build cluster features on play level data
+ # calculate speed, displacement, max width, max depth, path length
+ df_features <- df_gam %>%
+    filter(!is.na(coverage_responsibility), coverage_responsibility != "PREVENT", route_of_targeted_receiver != "SCREEN") %>% 
+    mutate(route_type = case_when(
+      route_of_targeted_receiver %in% c("GO", "POST", "WHEEL") ~ "VERTICAL",
+      route_of_targeted_receiver %in% c("IN", "OUT", "HITCH", "ANGLE", "CORNER") ~ "BREAKER",
+      route_of_targeted_receiver %in% c("CROSS", "SLANT", "FLAT") ~ "HORIZONTAL"
+    ),
+    responsibility_type = case_when(
+      coverage_responsibility == "MAN" ~ "MAN",
+      coverage_responsibility %in% c("THIRD", "QUARTER", "HALF", "POST") ~ "DEEP ZONE",
+      coverage_responsibility %in% c("HOLE", "CURL FLAT", "FLAT", "HOOK CURL") ~ "UNDERNEATH ZONE"
+    )) %>% 
+    group_by(play_id, responsibility_type, route_type) %>%
+    summarise(
+      width = max(y_gam),   
+      depth = max(x_gam),  
+      dist_per_frame = mean(sqrt(diff(x_gam)^2 + diff(y_gam)^2), na.rm = TRUE), # speed
+      vertical_disp = last(y_gam) - first(y_gam),
+      horizontal_disp = last(x_gam) - first(x_gam),
+      length = sum(sqrt(diff(x_gam)^2 + diff(y_gam)^2)),  # path length
+      .groups = "drop"
+    )
+  # get breaking point ( frame where COD occurs), get frames where max width and depth occur, frame to frame speed, and angle change
+  df_time <- df_gam %>%
+    group_by(play_id) %>%
+    mutate(
+      dx = c(NA, diff(x_gam)),
+      dy = c(NA, diff(y_gam)),
+      angle = atan2(dy, dx),
+      angle_change = c(NA, diff(angle)),
+       speed_ff = sqrt(dx^2 + dy^2), # frame to frame speed
+    heading = atan2(dy, dx) # dir of step, radians
+    ) %>% 
+    mutate(
+      # Modulo heading differences
+      dtheta_raw = heading - lag(heading),
+    dtheta = if_else(is.na(dtheta_raw), NA_real_,
+                     ((dtheta_raw + pi) %% (2 * pi)) - pi)
+    ) %>%
+    summarise(
+      breaking_point = frame_norm[which.max(abs(angle_change))],
+       width_time = frame_norm[which.max(y_gam)],
+      depth_time = frame_norm[which.max(x_gam)],
+    speed_var = var(speed_ff, na.rm = TRUE),
+    total_angle_change = sum(abs(dtheta), na.rm = TRUE),
+      .groups = "drop"
+    )
+  # join
+ df_features <- df_features %>%  left_join(df_time, by = "play_id") %>% add_count(responsibility_type, route_type) %>% filter(n >= 60)
+
+# filter df_features_frames to only include plays in df_features
+df_features_frames <- df_features_frames %>% left_join(df_features) %>%  # joins by play_id, responsibility_type, route_type, width, depth, dist_per_frame, vertical_disp, horizontal_disp, length, breaking_point, width_time, depth_time, speed_var, total_angle_change
+  filter( n >= 60)
+
+
+# check for correlated features on play level data
+corr_df <- df_features %>%  select(width, depth, length, width_time, depth_time, speed_var, total_angle_change, breaking_point, vertical_disp, horizontal_disp, dist_per_frame)
+
+cor(corr_df, use = "pairwise.complete.obs") 
+# width and depth unneeded - high cor to disp
+# drop dist_per_frame, high correlation to disp
+# info given by width_time and depth_time already available in disp
+
+
+### build function...
+## groups play level data by responsibility x route
+## builds 3 clusters for each group by 5 remaining features
+## join cluster labels and scores back into frame level data
+## calculate mean path for each cluster
+
+cluster_features <- c("breaking_point", "speed_var",
+                      "vertical_disp", "horizontal_disp",
+                      "total_angle_change")
+
+
+
+cluster_group <- function(play_df, frame_df, k = 3, seed=5678) {
+  # Subset features
+  X <- play_df[, cluster_features]
+  X <- na.omit(X)
+  
+  # Scale
+  X_scaled <- scale(X)
+  
+  # Fix the random seed for reproducibility
+  set.seed(seed)
+  
+  # get K-means
+  km <- kmeans(X_scaled, centers = k, nstart = 25)
+  
+  # Silhouette score for clusters
+  sil <- silhouette(km$cluster, dist(X_scaled))
+  sil_score <- mean(sil[,3])
+  
+  # Attach cluster labels to play level data
+  play_df$cluster <- km$cluster
+  play_df$silhouette <- sil_score
+  
+  # calculate cluster sizes
+  cluster_sizes <- play_df %>%
+    count(cluster, name = "cluster_size")
+  play_df <- play_df %>%
+    left_join(cluster_sizes, by = "cluster")
+  
+# join in cluster info to frame level data 
+frame_df2 <- frame_df %>% 
+  left_join(play_df %>% select(play_id, cluster, cluster_size, silhouette), by = c("play_id")) %>%
+  mutate(cluster = factor(cluster, levels = 1:3))
+  
+  # Calculate the mean path per cluster 
+mean_paths <- frame_df2 %>% 
+ group_by(cluster, frame_norm, responsibility_type, route_type, cluster_size) %>% 
+  summarise(mean_x = mean(x_gam, na.rm = TRUE),
+              mean_y = mean(y_gam, na.rm = TRUE),
+              .groups = "drop") %>% 
+  mutate(silhouette = round(sil_score, 3),
+           cluster = factor(cluster, levels = 1:3)) %>% 
+  arrange(cluster)
+  
+  # save mean_paths for all clusters into list
+  list(mean_paths = mean_paths, silhouette = sil_score, df_features_frames = frame_df2)
+}
+
+# cluster on play level data and join back with frame level data for all responsibility x route groups
+group_results <- df_features %>%
+  group_by(responsibility_type, route_type) %>%
+  group_map(~ cluster_group(.x,
+                            df_features_frames %>%
+                              filter(responsibility_type == .y$responsibility_type,
+                                     route_type == .y$route_type),
+                            k = 3))
+
+
+# get all cluster sizes together
+cluster.sizes <- function(df){
+  cluster.sizes.list <- list() # empty list to put output in
+for(i in 1:8){
+  # pull indexed rows from df_features_franes in each element
+cluster.size.df <- df[[i]][[3]][c(2,3,21,22)] %>% distinct() 
+
+# store in list
+cluster.sizes.list[[i]] <- cluster.size.df
+}
+  cluster_sizes <- bind_rows(cluster.sizes.list) %>%  arrange(responsibility_type, route_type, cluster, -cluster_size)
+  print(cluster_sizes)
+}
+
+cluster.sizes(group_results) # there;s small cluster sizes because of rare player paths when playing the ball
+
+
+# Name groups for easy navigation of lists
+group_keys <- df_features %>%
+  group_by(responsibility_type, route_type) %>%
+  group_keys() %>%
+  mutate(name = paste(responsibility_type, route_type, sep = "_")) %>%
+  pull(name)
+names(group_results) <- group_keys
+
+# loop that plots, for each group, the 3 mean cluster paths on a football field
+for (grp in names(group_results)) {
+  df <- group_results[[grp]]$mean_paths # mean path for each cluster
+  sil <- group_results[[grp]]$silhouette # silhouette score for each cluster
+  
+  p <- football_field() +
+    geom_path(data = df,
+              aes(x = mean_x, y = mean_y, group = cluster,
+                  color = factor(cluster)),
+              size = 1.2) +
+    coord_cartesian(
+      xlim = range(df$mean_x, na.rm = TRUE) + c(-5, 5),
+      ylim = range(df$mean_y, na.rm = TRUE) + c(-5, 5)
+    ) +
+    labs(title = paste(grp, "Mean Paths"),
+         subtitle = paste("Silhouette =", round(sil, 3)),
+         color = "Cluster") +
+    theme_minimal()
+  
+  print(p)
+}
+
+
+# function to find the play in each cluster with the path closest to its cluster's mean path
+find_closest_play <- function(mean_path, frame_df_cluster) {
+  # have function loop over cluster 1 to 3
+closest_list <-  lapply(1:3, function(c){
+  mean_path_c <- mean_path %>% filter(cluster == c) # mean paths
+  df_cluster_c <- frame_df_cluster %>% filter(cluster == c) # play paths
+  
+# Align each play's frames with the mean path frames
+  dist_df <- df_cluster_c %>%
+    inner_join(mean_path_c %>% select(frame_norm, responsibility_type, route_type, mean_x, mean_y),
+                by = c("frame_norm","responsibility_type","route_type"))  %>%
+    mutate(d_frame = sqrt((x_gam - mean_x)^2 + (y_gam - mean_y)^2)) %>% # dist of play and mean coords at that frame
+    group_by(game_id, play_id, responsibility_type, route_type) %>%
+    summarise(dist = mean(d_frame, na.rm = TRUE),
+              .groups = "drop")
+ slice_dist_df <- dist_df %>% slice_min(dist, with_ties = FALSE)  %>% # smallest dist
+    mutate(cluster = c) # ID the cluster of the row since we are looping
+  
+  slice_dist_df})
+  
+closest_play <- bind_rows(closest_list)
+
+
+  
+}
+
+# apply function to each of the 8 clustered responsibility x route groups
+
+closest_plays_DeepZoneBreaker <- find_closest_play(group_results$`DEEP ZONE_BREAKER`$mean_paths, group_results$`DEEP ZONE_BREAKER`$df_features_frames)
+
+closest_plays_DeepZoneVertical <- find_closest_play(group_results$`DEEP ZONE_VERTICAL`$mean_paths, group_results$`DEEP ZONE_VERTICAL`$df_features_frames)
+  
+closest_plays_ManBreaker <- find_closest_play(group_results$MAN_BREAKER$mean_paths, group_results$MAN_BREAKER$df_features_frames)
+
+closest_plays_ManHorizontal <- find_closest_play(group_results$MAN_HORIZONTAL$mean_paths, group_results$MAN_HORIZONTAL$df_features_frames)
+
+closest_plays_ManVertical <- find_closest_play(group_results$MAN_VERTICAL$mean_paths, group_results$MAN_VERTICAL$df_features_frames)
+
+closest_plays_UnderZoneBreaker <- find_closest_play(group_results$`UNDERNEATH ZONE_BREAKER`$mean_paths, group_results$`UNDERNEATH ZONE_BREAKER`$df_features_frames)
+
+closest_plays_UnderZoneHorizontal <- find_closest_play(group_results$`UNDERNEATH ZONE_HORIZONTAL`$mean_paths, group_results$`UNDERNEATH ZONE_HORIZONTAL`$df_features_frames)
+
+closest_plays_UnderZoneVertical <- find_closest_play(group_results$`UNDERNEATH ZONE_VERTICAL`$mean_paths, group_results$`UNDERNEATH ZONE_VERTICAL`$df_features_frames)
+                                                     
+# Join all closest_plays dfs together,then feed back into raw tracking data by play_id
+closest_plays <- rbind(closest_plays_DeepZoneBreaker, closest_plays_DeepZoneVertical, closest_plays_ManBreaker, closest_plays_ManHorizontal, closest_plays_ManVertical, closest_plays_UnderZoneBreaker, closest_plays_UnderZoneHorizontal, closest_plays_UnderZoneVertical) %>% 
+  mutate(closest_play = "Yes") %>%  # indicator variable
+  right_join(sumer_pbu_movements, by = c("play_id", "game_id")) %>% 
+  filter(closest_play == "Yes")
+
+# check join - unique play_ids should = 24
+length(unique(closest_plays$play_id))
+
+
+# code used to find plays alongside the closest play for each group cluster, so I can see multiple examples of plays each cluster
+
+# I would manually change the first element name and cluster value for df_features_frames and mean_paths and search for a 2nd representative play that was a bit different from the first
+#dist_df <- group_results$`UNDERNEATH ZONE_VERTICAL`$df_features_frames %>% filter(cluster ==3) %>%
+  #  inner_join(group_results$`UNDERNEATH ZONE_VERTICAL`$mean_paths %>% filter(cluster ==3) %>% #select(frame_norm, responsibility_type, route_type, mean_x, mean_y),
+     #           by = c("frame_norm","responsibility_type","route_type"))  %>%
+  #  mutate(d_frame = sqrt((x_gam - mean_x)^2 + (y_gam - mean_y)^2)) %>% # dist of play and mean coords at that frame
+   # group_by(game_id, play_id, nfl_id, responsibility_type, route_type) %>%
+  #  summarise(dist = mean(d_frame, na.rm = TRUE),
+ #             .groups = "drop")
+#dist_df  %>%
+ # inner_join(df_gam, by = c("play_id", "game_id", "nfl_id")) 
+```
+
+```{r, include=FALSE, echo=FALSE}
+### Data Snapshot of PBU Frequencies by Grouped route and coverage responsibility
+grouped_routes_responsibilities <-  df_features_frames %>%
+  group_by(responsibility_type, route_type) %>%
+  summarize(
+    n_paths = n_distinct(play_id, nfl_id),  # distinct player-paths
+    .groups = "drop"
+  ) %>%
+  arrange(desc(n_paths))
+
+library(gt)
+grouped_routes_responsibilities_table <- grouped_routes_responsibilities %>% 
+  gt() %>% 
+  tab_header(
+    title = "Route x Coverage Role Counts",
+    subtitle = "Plays with a PBU - 2023 Season"
+  )  %>% 
+  tab_options(
+    table.border.top.style = "solid",
+    table.border.top.width = px(2),
+    table.border.top.color = "black",
+    
+    table.border.bottom.style = "solid",
+    table.border.bottom.width = px(2),
+    table.border.bottom.color = "black",
+    
+    table.border.left.style = "solid",
+    table.border.left.width = px(2),
+    table.border.left.color = "black",
+    
+    table.border.right.style = "solid",
+    table.border.right.width = px(2),
+    table.border.right.color = "black"
+  ) %>% 
+  tab_style(
+    style = cell_borders(
+      sides = "bottom",
+      color = "black",
+      weight = px(2),
+      style = "solid"
+    ),
+    locations = cells_body(rows = nrow(grouped_routes_responsibilities))
+  )
+
+gtsave(grouped_routes_responsibilities_table, "grouped_routes_responsibilities_table.png")
+```
+
+```{r, include=FALSE, echo=FALSE}
+### Comparison Table of PBU Count for each cluster group
+
+# get all cluster sizes in one df
+cluster_sizes.df <- rbind(group_results[[1]]$df_features_frames,
+                    group_results[[2]]$df_features_frames,
+                    group_results[[3]]$df_features_frames,
+                    group_results[[4]]$df_features_frames,
+                    group_results[[5]]$df_features_frames,
+                    group_results[[6]]$df_features_frames,
+                    group_results[[7]]$df_features_frames,
+                    group_results[[8]]$df_features_frames) %>% 
+  select(cluster, responsibility_type, route_type, cluster_size) %>% 
+  distinct() %>%
+  arrange(cluster) %>% 
+  pivot_wider(
+    names_from = cluster,
+    values_from = cluster_size,
+    names_prefix = "cluster_",
+    names_glue = "cluster_{cluster}_size"
+  )
+
+cluster_sizes.df_table <- cluster_sizes.df %>% 
+  gt() %>% 
+  tab_header(
+    title = "Responsibility x Route Cluster Sizes",
+    subtitle = "Plays with a PBU - 2023 Season"
+  )  %>% 
+  tab_options(
+    table.border.top.style = "solid",
+    table.border.top.width = px(2),
+    table.border.top.color = "black",
+    
+    table.border.bottom.style = "solid",
+    table.border.bottom.width = px(2),
+    table.border.bottom.color = "black",
+    
+    table.border.left.style = "solid",
+    table.border.left.width = px(2),
+    table.border.left.color = "black",
+    
+    table.border.right.style = "solid",
+    table.border.right.width = px(2),
+    table.border.right.color = "black"
+  ) %>% 
+  tab_style(
+    style = cell_borders(
+      sides = "bottom",
+      color = "black",
+      weight = px(2),
+      style = "solid"
+    ),
+    locations = cells_body(rows = nrow(cluster_sizes.df))
+  )
+
+gtsave(cluster_sizes.df_table, "cluster.size.df_table.png")
+```
+
+
+
+```{r, include=FALSE, echo=FALSE}
+### Comparison Table of Cluster Elements Between Groups and Clusters
+
+# get all mean clustered paths in one df
+mean_paths <- rbind(group_results[[1]]$mean_paths,
+                    group_results[[2]]$mean_paths,
+                    group_results[[3]]$mean_paths,
+                    group_results[[4]]$mean_paths,
+                    group_results[[5]]$mean_paths,
+                    group_results[[6]]$mean_paths,
+                    group_results[[7]]$mean_paths,
+                    group_results[[8]]$mean_paths)
+
+# calculate the cluster elements for the mean paths
+mean_elements <- mean_paths  %>% 
+    group_by(cluster, responsibility_type, route_type) %>%
+    mutate(
+      vertical_disp = last(mean_y) - first(mean_y),
+      horizontal_disp = last(mean_x) - first(mean_x),
+      dx = c(NA, diff(mean_x)),
+      dy = c(NA, diff(mean_y)),
+      angle = atan2(dy, dx),
+      angle_change = c(NA, diff(angle)),
+       speed_ff = sqrt(dx^2 + dy^2), # frame to frame speed
+    heading = atan2(dy, dx) # dir of step, radians
+    ) %>% 
+    mutate(
+      # Modulo heading differences
+      dtheta_raw = heading - lag(heading),
+    dtheta = if_else(is.na(dtheta_raw), NA_real_,
+                     ((dtheta_raw + pi) %% (2 * pi)) - pi)
+    ) %>%
+    mutate(
+      breaking_point = frame_norm[which.max(abs(angle_change))],
+    speed_var = var(speed_ff, na.rm = TRUE),
+    total_angle_change = sum(abs(dtheta), na.rm = TRUE)
+    ) %>% 
+  # get one row per path, with cluster elements
+  slice_head(n=1) %>% 
+  select(cluster, responsibility_type, route_type, vertical_disp, horizontal_disp, breaking_point, speed_var, total_angle_change) %>% 
+  ungroup() %>% 
+  # round
+  mutate(across(4:8, ~ round(.x,3)))
+
+library(scales)
+# man table
+man_elements <- mean_elements %>%  filter(responsibility_type == "MAN") %>% select(-responsibility_type) %>% arrange(route_type, cluster) %>% 
+  gt() %>% 
+  tab_header(
+    title = "Man Mean Paths Characteristics by Cluster",
+    subtitle = "Plays with a PBU - 2023 Season"
+  )  %>% 
+  # color grade each column
+  data_color(
+    columns = c(vertical_disp),
+    colors = col_numeric(
+    palette = c("lightgreen", "yellow3", "firebrick3"),
+      domain = range(mean_elements %>%  filter(responsibility_type == "MAN") %>% select(vertical_disp), na.rm = TRUE)) 
+    ) %>% 
+  data_color(
+    columns = c(horizontal_disp),
+    colors = col_numeric(
+    palette = c("lightgreen", "yellow3", "firebrick3"),
+      domain = range(mean_elements %>%  filter(responsibility_type == "MAN") %>% select(horizontal_disp), na.rm = TRUE))
+  ) %>% 
+  data_color(
+    columns = c(breaking_point),
+    colors = col_numeric(
+    palette = c("lightgreen", "yellow3", "firebrick3"),
+      domain = range(mean_elements %>%  filter(responsibility_type == "MAN") %>% select(breaking_point), na.rm = TRUE)) 
+    ) %>% 
+  data_color(
+    columns = c(speed_var),
+    colors = col_numeric(
+    palette = c("lightgreen", "yellow3", "firebrick3"),
+      domain = range(mean_elements %>%  filter(responsibility_type == "MAN") %>% select(speed_var), na.rm = TRUE)) ) %>% 
+  data_color(
+    columns = c(total_angle_change),
+    colors = col_numeric(
+    palette = c("lightgreen", "yellow3", "firebrick3"),
+      domain = range(mean_elements %>%  filter(responsibility_type == "MAN") %>% select(total_angle_change), na.rm = TRUE))
+  ) %>%
+  tab_style(
+    style = cell_borders(
+      sides = "top",
+      color = "black",
+      weight = px(2)
+    ),
+    locations = cells_body(
+      rows = 1
+    )
+  ) %>% 
+  # Bold every 3rd row
+   tab_style(
+    style = cell_borders(
+      sides = "bottom",
+      color = "black",
+      weight = px(2)
+    ),
+    locations = cells_body(
+      rows = seq(3, nrow(mean_elements %>% filter(responsibility_type == "MAN")), by = 3)
+    )
+  )
+  
+# underneath zone table
+underneath_elements <- mean_elements %>%  filter(responsibility_type == "UNDERNEATH ZONE") %>% select(-responsibility_type) %>% arrange(route_type, cluster) %>% 
+  gt() %>% 
+  tab_header(
+    title = "Underneath Zone Mean Paths Characteristics by Cluster",
+    subtitle = "Plays with a PBU - 2023 Season"
+  )  %>% 
+  # color grade each column
+  data_color(
+    columns = c(vertical_disp),
+    colors = col_numeric(
+    palette = c("lightgreen", "yellow3", "firebrick3"),
+      domain = range(mean_elements %>%  filter(responsibility_type == "UNDERNEATH ZONE") %>% select(vertical_disp), na.rm = TRUE)) 
+    ) %>% 
+  data_color(
+    columns = c(horizontal_disp),
+    colors = col_numeric(
+    palette = c("lightgreen", "yellow3", "firebrick3"),
+      domain = range(mean_elements %>%  filter(responsibility_type == "UNDERNEATH ZONE") %>% select(horizontal_disp), na.rm = TRUE))
+   ) %>% 
+  data_color(
+    columns = c(breaking_point),
+    colors = col_numeric(
+    palette = c("lightgreen", "yellow3", "firebrick3"),
+      domain = range(mean_elements %>%  filter(responsibility_type == "UNDERNEATH ZONE") %>% select(breaking_point), na.rm = TRUE)) 
+    ) %>% 
+  data_color(
+    columns = c(speed_var),
+    colors = col_numeric(
+    palette = c("lightgreen", "yellow3", "firebrick3"),
+      domain = range(mean_elements %>%  filter(responsibility_type == "UNDERNEATH ZONE") %>% select(speed_var), na.rm = TRUE))
+    ) %>% 
+  data_color(
+    columns = c(total_angle_change),
+    colors = col_numeric(
+    palette = c("lightgreen", "yellow3", "firebrick3"),
+      domain = range(mean_elements %>%  filter(responsibility_type == "UNDERNEATH ZONE") %>% select(total_angle_change), na.rm = TRUE))
+  ) %>%
+  tab_style(
+    style = cell_borders(
+      sides = "top",
+      color = "black",
+      weight = px(2)
+    ),
+    locations = cells_body(
+      rows = 1
+    )
+  ) %>% 
+  # Bold every 3rd row
+   tab_style(
+    style = cell_borders(
+      sides = "bottom",
+      color = "black",
+      weight = px(2)
+    ),
+    locations = cells_body(
+      rows = seq(3, nrow(mean_elements %>% filter(responsibility_type == "UNDERNEATH ZONE")), by = 3)
+    )
+  )
+  
+  
+# deep zone table
+deep_elements <- mean_elements %>%  filter(responsibility_type == "DEEP ZONE") %>% select(-responsibility_type) %>% arrange(route_type, cluster) %>% 
+  gt() %>% 
+  tab_header(
+    title = "Deep Zone Mean Paths Characteristics by Cluster",
+    subtitle = "Plays with a PBU - 2023 Season"
+  )  %>% 
+  # color grade each column
+  data_color(
+    columns = c(vertical_disp),
+    colors = col_numeric(
+    palette = c("lightgreen", "yellow3", "firebrick3"),
+      domain = range(mean_elements %>%  filter(responsibility_type == "DEEP ZONE") %>% select(vertical_disp), na.rm = TRUE)) 
+    ) %>% 
+  data_color(
+    columns = c(horizontal_disp),
+    colors = col_numeric(
+    palette = c("lightgreen", "yellow3", "firebrick3"),
+      domain = range(mean_elements %>%  filter(responsibility_type == "DEEP ZONE") %>% select(horizontal_disp), na.rm = TRUE))
+  )  %>% 
+  data_color(
+    columns = c(breaking_point),
+    colors = col_numeric(
+    palette = c("lightgreen", "yellow3", "firebrick3"),
+      domain = range(mean_elements %>%  filter(responsibility_type == "DEEP ZONE") %>% select(breaking_point), na.rm = TRUE)) 
+    ) %>% 
+  data_color(
+    columns = c(speed_var),
+    colors = col_numeric(
+    palette = c("lightgreen", "yellow3", "firebrick3"),
+      domain = range(mean_elements %>%  filter(responsibility_type == "DEEP ZONE") %>% select(speed_var), na.rm = TRUE)) 
+    ) %>% 
+  data_color(
+    columns = c(total_angle_change),
+    colors = col_numeric(
+    palette = c("lightgreen", "yellow3", "firebrick3"),
+      domain = range(mean_elements %>%  filter(responsibility_type == "DEEP ZONE") %>% select(total_angle_change), na.rm = TRUE))
+  ) %>%
+  tab_style(
+    style = cell_borders(
+      sides = "top",
+      color = "black",
+      weight = px(2)
+    ),
+    locations = cells_body(
+      rows = 1
+    )
+  ) %>%
+  # Bold every 3rd row
+   tab_style(
+    style = cell_borders(
+      sides = "bottom",
+      color = "black",
+      weight = px(2)
+    ),
+    locations = cells_body(
+      rows = seq(3, nrow(mean_elements %>% filter(responsibility_type == "DEEP ZONE")), by = 3)
+    )
+  )
+
+gtsave(man_elements, "man_elements.png")
+gtsave(underneath_elements, "underneath_elements.png")
+gtsave(deep_elements, "deep_elements.png")
+```
+
+
+```{r, include=FALSE, echo=FALSE}
+# nake dashboard of plots
+library(flexdashboard)
+
+
+# but first, give meaningful labels to each grouped cluster
+legend_labels <- list(
+   "DEEP ZONE_BREAKER"= c("Jump from Great Depth", "Jump From Minimal Depth (No Transition)", "Break from Minimal Depth (Transition)"),
+   "DEEP ZONE_VERTICAL"= c("Inside Helper on Vert", "Carry Vertical w/ SL Help", "Carry Seam w/ Inside Help"),
+   "MAN_BREAKER"= c("Recovery","In-Phase on In/Out Breaker", "In-Phase on Stop Routes"),
+   "MAN_HORIZONTAL"= c("Mirror","Undercut","Trail"),
+   "MAN_VERTICAL"= c("Squeeze to Bottom SL","In-Phase, No Squeeze", "Squeeze to Top SL"),
+   "UNDERNEATH ZONE_BREAKER"= c("Hook/Curl Flat w/Vertical Break","Hook/Curl Flat, w/ Horizontal Break", "Ball Thrown Right to Zone"),
+   "UNDERNEATH ZONE_HORIZONTAL"= c("Zone Drop from LOS", "Play Flat Zone", "Cut Off Crosser"),
+   "UNDERNEATH ZONE_VERTICAL"= c("Hook/Curl Flat Carry Seam","Hook/Curl Flat Carry Vert","Hole Drop")
+ )
+
+# list for plots to got
+plots <- list()
+# plotting loop
+for (grp in names(group_results)) {
+  df <- group_results[[grp]]$mean_paths
+  sil <- group_results[[grp]]$silhouette # silhouette score for each cluster
+  
+    # get cluster size values for labeling
+  cluster_sizes <- df %>%
+    distinct(cluster, cluster_size) %>%
+    arrange(cluster)
+  
+  # make data with 1st, 5th, 10th frame for directional arrows
+ arrow_points <- df %>%
+  group_by(cluster) %>%
+  filter(frame_norm %in% c(5,6)) %>%
+   # so arrows follow`direction of path
+  mutate(
+    xend = lead(mean_x), 
+    yend = lead(mean_y)
+  ) %>%  filter(frame_norm == 5)
+  
+  # put cluster size in parenthesis after label
+  counted_legend_labels <- paste0(legend_labels[[grp]], " (", cluster_sizes$cluster_size, ")")
+  
+  plots[[grp]] <- football_field() +
+    geom_path(data = df,
+              aes(x = mean_x, y = mean_y, group = cluster,
+                  color = factor(cluster)),
+              size = 1.2) +
+    coord_cartesian(
+      xlim = range(df$mean_x, na.rm = TRUE) + c(-5, 5),
+      ylim = range(df$mean_y, na.rm = TRUE) + c(-5, 5)
+    ) +
+    labs(title = paste("Clustered Mean Defender Paths on PBUs", str_to_title(df$responsibility_type), "vs.", str_to_title(df$route_type), "Routes"),
+         subtitle = paste("2023 NFL Regular Season | Paths Smoothed using GAM |", "Silhouette =", round(sil, 3)),
+         color = "Cluster",
+         x = "Yardline",
+         y = "Yards",
+         caption = "Source: NFL, nflfastr, SumerSports")  +
+  geom_segment(
+    data = arrow_points,
+    aes(x = mean_x, y = mean_y, xend = xend, yend = yend),
+    arrow = arrow(type = "open", length = unit(0.1, "inches")),
+    alpha = 0.75,
+    inherit.aes = FALSE
+  ) +
+    scale_color_manual(
+    values = c("1" = "firebrick3", "2" = "green3", "3" = "blue3"),   
+    labels = counted_legend_labels                          
+  ) +
+    theme_minimal(base_size = 16) + 
+    theme(legend.position = "bottom")
+}
+
+```
+
+```{r, include=FALSE, echo=FALSE}
+# Table of Cluster Names
+cluster_names_table <- tribble(
+  ~coverage_route_combo,  ~cluster_1_name,  ~cluster_2_name, ~cluster_3_name,
+  "Deep Zone vs. Breaker",          "Jump from Great Depth", "Jump From Minimal Depth (No Transition)", "Break from Minimal Depth (Transition)",
+  "Deep Zone vs. Vertical",        "Inside Helper on Vert", "Carry Vertical w/ Sideline Help", "Carry Seam w/ Inside Help",
+  "Man vs. Breaker",               "Recovery","In-Phase on In/Out Breaker", "In-Phase on Stop Routes",
+  "Man vs. Horizontal",            "Mirror","Undercut","Trail",
+  "Man vs. Vertical",               "Squeeze to Bottom Sideline","In-Phase, No Squeeze", "Squeeze to Top Sideline",
+  "Underneath Zone vs. Breaker",    "Hook/Curl Flat w/Vertical Break","Hook/Curl Flat, w/ Horizontal Break", "Ball Thrown Right to Zone",
+  "Underneath Zone vs. Horizontal", "Zone Drop from LOS", "Play Flat Zone", "Cut Off Crosser",
+  "Underneath Zone vs. Vertical",   "Hook/Curl Flat Carry Seam","Hook/Curl Flat Carry Vert","Hole Drop"
+) %>% gt() %>% 
+  tab_header(
+    title = "Defined Cluster Names"
+  )
+
+gtsave(cluster_names_table, "cluster_names_table.png")
+```
+
+```{r, include=FALSE, echo=FALSE}
+man_dashboard <- (plots[["MAN_BREAKER"]] + theme(plot.caption = element_blank()) + plots[["MAN_VERTICAL"]] + theme(plot.caption = element_blank())) / (plot_spacer() +plots[["MAN_HORIZONTAL"]] + theme(plot.caption = element_blank()) + plot_spacer() + plot_layout(widths = c(0.5,1,0.5))) + 
+  plot_annotation(title = "Mean Cluster Defender Paths in Man Coverage",
+                  caption = "Source: NFL, nflfastr, SumerSports",
+                  theme = theme(
+    plot.title = element_text(hjust = 0.5, size = 40, face = "bold"),
+    plot.caption = element_text(size = 15)
+  ))
+deep_dashboard <- (plots[["DEEP ZONE_BREAKER"]] + theme(plot.caption = element_blank()) | plots[["DEEP ZONE_VERTICAL"]] + theme(plot.caption = element_blank())) + 
+  plot_annotation(title = "Mean Cluster Defender Paths in Deep Zones", 
+                  caption = "Source: NFL, nflfastr, SumerSports",
+                  theme = theme(
+    plot.title = element_text(hjust = 0.5, size = 40, face = "bold"),
+    plot.caption = element_text(size = 15)
+                  ))
+under_dashboard <- (plots[["UNDERNEATH ZONE_BREAKER"]] + theme(plot.caption = element_blank()) + plots[["UNDERNEATH ZONE_HORIZONTAL"]] + theme(plot.caption = element_blank())) / (plot_spacer() + plots[["UNDERNEATH ZONE_VERTICAL"]] + theme(plot.caption = element_blank()) + plot_spacer() + plot_layout(widths = c(0.5,1,0.5))) + 
+  plot_annotation(title = "Mean Cluster Defender Paths in Underneath Zones", 
+                  caption = "Source: NFL, nflfastr, SumerSports",
+                  theme = theme(
+    plot.title = element_text(hjust = 0.5, size = 40, face = "bold"),
+    plot.caption = element_text(size = 15)
+))
+man_dashboard
+deep_dashboard
+under_dashboard
+
+ggsave("man_dashboard.png", man_dashboard, width = 21, height = 14)
+ggsave("deep_dashboard.png", deep_dashboard, width = 21, height = 10)
+ggsave("under_dashboard.png", under_dashboard, width = 21, height = 14)
+
+```      
+
+## Deep Zone {.tabset}
+### Deep Zone vs. Breakers
+```{r, echo=FALSE, fig.height =8, fig.width =12}
+plots[["DEEP ZONE_BREAKER"]]
+```
+
+### Deep Zone vs. Verticals
+```{r, echo=FALSE, fig.height =8, fig.width =12}
+plots[["DEEP ZONE_VERTICAL"]]
+```
+
+## Man {.tabset}
+### Man vs. Breakers
+```{r, echo=FALSE, fig.height =8, fig.width =12}
+plots[["MAN_BREAKER"]]
+```
+
+### Man vs. Horizontals
+```{r, echo=FALSE, fig.height =8, fig.width =12}
+plots[["MAN_HORIZONTAL"]]
+```
+
+### Man vs. Verticals
+```{r,echo=FALSE, fig.height =8, fig.width =12}
+plots[["MAN_VERTICAL"]]
+```
+
+## Underneath Zone {.tabset}
+### Underneath Zone vs. Breakers
+```{r, echo=FALSE, fig.height =8, fig.width =12}
+plots[["UNDERNEATH ZONE_BREAKER"]]
+```
+
+### Underneath Zone vs. Horizontals
+```{r, echo=FALSE, fig.height =8, fig.width =12}
+plots[["UNDERNEATH ZONE_HORIZONTAL"]]
+```
+
+### Underneath Zone vs. Verticals
+```{r, echo=FALSE, fig.height =8, fig.width =12}
+plots[["UNDERNEATH ZONE_VERTICAL"]]
+```
+
